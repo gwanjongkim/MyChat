@@ -7,7 +7,6 @@ import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.text.BadLocationException;
 import java.awt.*;
-import java.awt.event.ActionListener;
 import java.io.*;
 import java.net.*;
 import java.util.HashMap;
@@ -21,6 +20,7 @@ public final class ChatPanel extends JPanel {
     private JTextField tUser = new JTextField(8);
     private JTextField tHost = new JTextField(12);
     private JTextField tPort = new JTextField(5);
+
     private JButton bConnect = new JButton("Connect");
     private JButton bDisconnect = new JButton("Disconnect");
 
@@ -33,6 +33,7 @@ public final class ChatPanel extends JPanel {
     private DataInputStream in;
     private DataOutputStream out;
     private Thread reader;
+
     private final MessageCodec codec = new JavaObjectCodec();
 
     private long lastTypingSentAt = 0L;
@@ -50,12 +51,23 @@ public final class ChatPanel extends JPanel {
 
     private final Map<String, TypingEntry> typingEntries = new HashMap<>();
 
+    // ==============================
+    //        MoveMessage 전달
+    // ==============================
+    public interface MoveReceiver {
+        void onMove(int fromCol, int fromRow, int toCol, int toRow, int color);
+    }
+
+    private MoveReceiver moveReceiver;
+
+    public void setMoveReceiver(MoveReceiver r) {
+        this.moveReceiver = r;
+    }
 
     public ChatPanel() {
 
         setPreferredSize(new Dimension(350, 700));
-        setLayout(new BorderLayout(6,6));
-
+        setLayout(new BorderLayout(6, 6));
 
         top = new JPanel();
         top.setPreferredSize(new Dimension(10, 60));
@@ -73,9 +85,8 @@ public final class ChatPanel extends JPanel {
         chat.setEditable(false);
         JScrollPane sc = new JScrollPane(chat);
 
-        bottom = new JPanel(new BorderLayout(6,6));
+        bottom = new JPanel(new BorderLayout(6, 6));
         JPanel right = new JPanel();
-
         right.add(bEmoji);
         right.add(bSend);
 
@@ -95,19 +106,20 @@ public final class ChatPanel extends JPanel {
         tInput.addActionListener(e -> sendText());
         bEmoji.addActionListener(e -> openPicker());
 
-
+        // 입력 중 상태 감지
         tInput.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
 
             private void onChange() {
                 long now = System.currentTimeMillis();
+
                 if (now - lastTypingSentAt > TYPING_DEBOUNCE_MS) {
                     lastTypingSentAt = now;
                     sendTyping(true);
                 }
 
                 if (typingIdleTimer != null) typingIdleTimer.stop();
-
-                typingIdleTimer = new javax.swing.Timer(TYPING_IDLE_MS, e -> sendTyping(false));
+                typingIdleTimer = new javax.swing.Timer(TYPING_IDLE_MS,
+                        e -> sendTyping(false));
                 typingIdleTimer.setRepeats(false);
                 typingIdleTimer.start();
             }
@@ -116,20 +128,10 @@ public final class ChatPanel extends JPanel {
             @Override public void removeUpdate(javax.swing.event.DocumentEvent e){ onChange(); }
             @Override public void changedUpdate(javax.swing.event.DocumentEvent e){ onChange(); }
         });
-
     }
 
-    // ======================================================================
-    // ★★★ 외부에서 top/bottom을 숨기기 위한 메서드 ★★★
-    // ======================================================================
-    public void hideTopBar() {
-        if (top != null) top.setVisible(false);
-    }
-
-    public void hideBottomBar() {
-        if (bottom != null) bottom.setVisible(false);
-    }
-
+    public void hideTopBar() { if (top != null) top.setVisible(false); }
+    public void hideBottomBar() { if (bottom != null) bottom.setVisible(false); }
 
     public void setDefaultTarget(String host, int port, String user) {
         tHost.setText(host);
@@ -137,6 +139,9 @@ public final class ChatPanel extends JPanel {
         tUser.setText(user);
     }
 
+    // ==============================
+    //         네트워크 연결
+    // ==============================
     private void connect() {
         try {
             String host = tHost.getText().trim();
@@ -144,6 +149,7 @@ public final class ChatPanel extends JPanel {
 
             socket = new Socket();
             socket.connect(new InetSocketAddress(host, port), 3000);
+
             in  = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
             out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
 
@@ -156,9 +162,8 @@ public final class ChatPanel extends JPanel {
             bDisconnect.setEnabled(true);
             bSend.setEnabled(true);
             bEmoji.setEnabled(true);
-            tInput.requestFocusInWindow();
 
-            send(new TypingMessage(from(), false, 1));
+            sendTyping(false);
 
         } catch (Exception ex) {
             append("[error] " + ex.getMessage() + "\n");
@@ -180,13 +185,16 @@ public final class ChatPanel extends JPanel {
         append("[system] disconnected\n");
     }
 
-
+    // ==============================
+    //         서버로부터 메시지 읽기
+    // ==============================
     private void readLoop() {
         try {
             while (socket != null && !socket.isClosed()) {
 
                 int len = in.readInt();
                 byte[] buf = in.readNBytes(len);
+
                 ChatMessage msg = codec.decode(buf);
 
                 if (msg instanceof TextMessage tm) {
@@ -202,6 +210,17 @@ public final class ChatPanel extends JPanel {
                         if (ty.typing()) showTypingInline(ty.from());
                         else removeTypingInline(ty.from());
                     }
+
+                } else if (msg instanceof MoveMessage mm) {
+                    if (moveReceiver != null) {
+                        moveReceiver.onMove(
+                                mm.fromCol(),
+                                mm.fromRow(),
+                                mm.toCol(),
+                                mm.toRow(),
+                                mm.color()
+                        );
+                    }
                 }
             }
 
@@ -210,12 +229,25 @@ public final class ChatPanel extends JPanel {
         }
     }
 
+    // ==============================
+    //       MoveMessage 전송
+    // ==============================
+    public void sendMove(int fromCol, int fromRow, int toCol, int toRow, int color) {
+        try {
+            MoveMessage m = new MoveMessage(from(), fromCol, fromRow, toCol, toRow, color);
+            send(m);
+        } catch (Exception ignored) {}
+    }
 
+    // ==============================
+    // 텍스트 / 이미지 전송
+    // ==============================
     private void sendText() {
         String text = tInput.getText().trim();
         if (text.isEmpty()) return;
 
         var msg = new TextMessage(from(), text);
+
         try {
             send(msg);
             tInput.setText("");
@@ -225,7 +257,6 @@ public final class ChatPanel extends JPanel {
             append("[error] " + ex.getMessage() + "\n");
         }
     }
-
 
     private void openPicker() {
         JFileChooser fc = new JFileChooser();
@@ -242,14 +273,12 @@ public final class ChatPanel extends JPanel {
         }
     }
 
-
     private String guessMime(String name) {
         name = name.toLowerCase();
         if (name.endsWith(".png")) return "image/png";
         if (name.endsWith(".gif")) return "image/gif";
         return "image/jpeg";
     }
-
 
     private void send(ChatMessage msg) throws Exception {
         byte[] data = codec.encode(msg);
@@ -260,11 +289,13 @@ public final class ChatPanel extends JPanel {
         }
     }
 
-
     private String from() {
         return tUser.getText().trim();
     }
 
+    // ==============================
+    // UI 출력
+    // ==============================
     private void append(String s) {
         SwingUtilities.invokeLater(() -> {
             try {
@@ -273,7 +304,6 @@ public final class ChatPanel extends JPanel {
             } catch (BadLocationException ignored) {}
         });
     }
-
 
     private void showImage(ImageMessage im) {
         SwingUtilities.invokeLater(() -> {
@@ -289,7 +319,9 @@ public final class ChatPanel extends JPanel {
         });
     }
 
-
+    // ==============================
+    // 타이핑 표시
+    // ==============================
     private void showTypingInline(String user) {
         SwingUtilities.invokeLater(() -> {
             try {
@@ -310,7 +342,6 @@ public final class ChatPanel extends JPanel {
 
                 ent.ttlTimer = new javax.swing.Timer(TYPING_TTL_MS,
                         e -> removeTypingInline(user));
-
                 ent.ttlTimer.setRepeats(false);
                 ent.ttlTimer.start();
 
@@ -340,7 +371,6 @@ public final class ChatPanel extends JPanel {
         });
     }
 
-
     private void sendTyping(boolean typing) {
         if (socket == null || socket.isClosed()) return;
 
@@ -348,11 +378,12 @@ public final class ChatPanel extends JPanel {
         try { send(m); } catch (Exception ignored) {}
     }
 
+    public void appendSystemMessage(String msg) {
+        append("[system] " + msg + "\n");
+    }
+
     public void autoConnect() {
         connect();
     }
-
 }
-
-
 

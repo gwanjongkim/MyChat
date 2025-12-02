@@ -1,8 +1,4 @@
-// File: src/ui/StartMenu.java
 package ui;
-
-import client.ChessChatMain;
-import simplechess.main.GamePanel;
 
 import javax.swing.*;
 import java.awt.*;
@@ -13,48 +9,40 @@ public class StartMenu extends JFrame {
         setTitle("Java Chess");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-
-        int fw = GamePanel.WIDTH + 400;
-        int fh = GamePanel.HEIGHT;
-        setPreferredSize(new Dimension(fw, fh));
-
-
+        setPreferredSize(new Dimension(1000, 800));
         pack();
         setLocationRelativeTo(null);
 
-
         JPanel mainPanel = new JPanel();
-        mainPanel.setBackground(new Color(30, 39, 56));  // 어두운 배경
+        mainPanel.setBackground(new Color(30, 39, 56));
         mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
-
-
         mainPanel.setBorder(BorderFactory.createEmptyBorder(150, 200, 150, 200));
 
         JLabel title = new JLabel("Java Chess");
         title.setFont(new Font("Arial", Font.BOLD, 48));
-        title.setForeground(new Color(255, 204, 0));  // 금색 느낌
+        title.setForeground(new Color(255, 204, 0));
         title.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        JButton btn1 = createMenuButton("플레이어1", "/ui/icons/user.png");
-        JButton btn2 = createMenuButton("플레이어2", "/ui/icons/user.png");
+        JButton btn1 = createMenuButton("플레이어1 시작", "/ui/icons/user.png");
+        JButton btn2 = createMenuButton("플레이어2 시작", "/ui/icons/user.png");
         JButton btnExit = createMenuButton("종료", "/ui/icons/exit.png");
 
-
+        // ★ 플레이어1이 White, 플레이어2가 Black
         btn1.addActionListener(e -> {
-            ChessChatMain.run("플레이어1");
+            new ChessGameFrame("플레이어1", "플레이어2");
             dispose();
         });
 
+        // ★ 이 버튼을 누르면 플레이어2가 White, 플레이어1이 Black
         btn2.addActionListener(e -> {
-            ChessChatMain.run("플레이어2");
+            new ChessGameFrame("플레이어2", "플레이어1");
             dispose();
         });
 
         btnExit.addActionListener(e -> System.exit(0));
 
-
         mainPanel.add(title);
-        mainPanel.add(Box.createVerticalStrut(80));   // 제목 아래 여백
+        mainPanel.add(Box.createVerticalStrut(80));
         mainPanel.add(btn1);
         mainPanel.add(Box.createVerticalStrut(30));
         mainPanel.add(btn2);
@@ -88,7 +76,7 @@ public class StartMenu extends JFrame {
             Image img = icon.getImage().getScaledInstance(30, 30, Image.SCALE_SMOOTH);
             btn.setIcon(new ImageIcon(img));
         } catch (Exception ex) {
-            System.out.println("아이콘 로딩 실패(무시): " + iconPath);
+            System.out.println("아이콘 로딩 실패: " + iconPath);
         }
 
         return btn;
@@ -98,6 +86,9 @@ public class StartMenu extends JFrame {
         SwingUtilities.invokeLater(StartMenu::new);
     }
 }
+
+
+
 
 
 
