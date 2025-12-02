@@ -3,12 +3,10 @@ package simplechess.main;
 import java.awt.*;
 import java.util.ArrayList;
 import javax.swing.JPanel;
-
 import simplechess.piece.*;
 
 public class GamePanel extends JPanel implements Runnable {
 
-    // --- 턴 변경 리스너 ---
     public interface TurnListener {
         void onTurnChanged(int currentColor);
     }
@@ -19,7 +17,6 @@ public class GamePanel extends JPanel implements Runnable {
         this.turnListener = listener;
     }
 
-    // --- ★ 말 이동 리스너(서버 전송용) ---
     public interface MoveListener {
         void onMoveCommitted(int fromCol, int fromRow, int toCol, int toRow, int color);
     }
@@ -30,37 +27,48 @@ public class GamePanel extends JPanel implements Runnable {
         this.moveListener = listener;
     }
 
-    // --- ★ 서버에서 MoveMessage를 받았을 때 적용하기 위한 메서드 ---
-    public void applyNetworkMove(int fromCol, int fromRow, int toCol, int toRow) {
-
-        // 이동할 말 찾기
-        for (Piece p : pieces) {
-            if (p.col == fromCol && p.row == fromRow) {
-
-                // 이동
-                p.col = toCol;
-                p.row = toRow;
-
-                p.x = p.getX(p.col);
-                p.y = p.getY(p.row);
-
-                // 이미 말이 있다면 제거 (타격)
-                pieces.removeIf(other ->
-                        other != p && other.col == toCol && other.row == toRow);
-
-                // simPieces도 갱신
-                copyPieces(pieces, simPieces);
-
-                // 턴 변경
-                changePlayer();
-
-                repaint();
-                return;
-            }
-        }
+    public interface GameOverListener {
+        void onGameOver(int winnerColor);
     }
 
-    // ---------------------------------------------
+    private GameOverListener gameOverListener;
+
+    public void setGameOverListener(GameOverListener listener) {
+        this.gameOverListener = listener;
+    }
+
+    public void applyNetworkMove(int fromCol, int fromRow, int toCol, int toRow) {
+        Piece target = null;
+
+        for (Piece p : pieces) {
+            if (p.col == fromCol && p.row == fromRow) {
+                target = p;
+                break;
+            }
+        }
+
+        if (target == null) return;
+
+        for (int i = pieces.size() - 1; i >= 0; i--) {
+            Piece other = pieces.get(i);
+            if (other != target && other.col == toCol && other.row == toRow) {
+                pieces.remove(i);
+            }
+        }
+
+        target.col = toCol;
+        target.row = toRow;
+        target.x = target.getX(toCol);
+        target.y = target.getY(toRow);
+
+        copyPieces(pieces, simPieces);
+
+        changePlayer();
+
+        repaint();
+
+        checkGameOver();
+    }
 
     public static final int WIDTH = Board.SQUARE_SIZE * 8;
     public static final int HEIGHT = Board.SQUARE_SIZE * 8;
@@ -108,47 +116,23 @@ public class GamePanel extends JPanel implements Runnable {
     public void setPieces() {
         pieces.clear();
 
-        // White
-        pieces.add(new Pawn(WHITE, 0, 6));
-        pieces.add(new Pawn(WHITE, 1, 6));
-        pieces.add(new Pawn(WHITE, 2, 6));
-        pieces.add(new Pawn(WHITE, 3, 6));
-        pieces.add(new Pawn(WHITE, 4, 6));
-        pieces.add(new Pawn(WHITE, 5, 6));
-        pieces.add(new Pawn(WHITE, 6, 6));
-        pieces.add(new Pawn(WHITE, 7, 6));
-
+        for (int i = 0; i < 8; i++) pieces.add(new Pawn(WHITE, i, 6));
         pieces.add(new Rook(WHITE, 0, 7));
         pieces.add(new Rook(WHITE, 7, 7));
-
         pieces.add(new Knight(WHITE, 1, 7));
         pieces.add(new Knight(WHITE, 6, 7));
-
         pieces.add(new Bishop(WHITE, 2, 7));
         pieces.add(new Bishop(WHITE, 5, 7));
-
         pieces.add(new Queen(WHITE, 3, 7));
         pieces.add(new King(WHITE, 4, 7));
 
-        // Black
-        pieces.add(new Pawn(BLACK, 0, 1));
-        pieces.add(new Pawn(BLACK, 1, 1));
-        pieces.add(new Pawn(BLACK, 2, 1));
-        pieces.add(new Pawn(BLACK, 3, 1));
-        pieces.add(new Pawn(BLACK, 4, 1));
-        pieces.add(new Pawn(BLACK, 5, 1));
-        pieces.add(new Pawn(BLACK, 6, 1));
-        pieces.add(new Pawn(BLACK, 7, 1));
-
+        for (int i = 0; i < 8; i++) pieces.add(new Pawn(BLACK, i, 1));
         pieces.add(new Rook(BLACK, 0, 0));
         pieces.add(new Rook(BLACK, 7, 0));
-
         pieces.add(new Knight(BLACK, 1, 0));
         pieces.add(new Knight(BLACK, 6, 0));
-
         pieces.add(new Bishop(BLACK, 2, 0));
         pieces.add(new Bishop(BLACK, 5, 0));
-
         pieces.add(new Queen(BLACK, 3, 0));
         pieces.add(new King(BLACK, 4, 0));
     }
@@ -179,6 +163,7 @@ public class GamePanel extends JPanel implements Runnable {
     }
 
     private void update() {
+        if (gameover) return;
 
         if (promotion) {
             promoting();
@@ -194,18 +179,12 @@ public class GamePanel extends JPanel implements Runnable {
                         activeP = piece;
                     }
                 }
-            } else {
-                simulate();
-            }
+            } else simulate();
         }
 
         if (!mouse.pressed) {
-
             if (activeP != null) {
-
                 if (validSquare) {
-
-                    // 이동 전 좌표 저장
                     int fromCol = activeP.preCol;
                     int fromRow = activeP.preRow;
                     int toCol = activeP.col;
@@ -215,23 +194,18 @@ public class GamePanel extends JPanel implements Runnable {
                     activeP.updatePosition();
                     if (castlingP != null) castlingP.updatePosition();
 
-                    // ★ 외부(네트워크)로 이동 확정 이벤트 전달
-                    if (moveListener != null) {
+                    if (moveListener != null)
                         moveListener.onMoveCommitted(fromCol, fromRow, toCol, toRow, currentColor);
-                    }
 
-                    if (canPromote()) {
-                        promotion = true;
-                    } else {
+                    if (canPromote()) promotion = true;
+                    else {
                         changePlayer();
+                        checkGameOver();
                     }
-
                 } else {
-                    // 이동 취소
                     copyPieces(pieces, simPieces);
                     activeP.resetPosition();
                 }
-
                 activeP = null;
             }
         }
@@ -257,9 +231,8 @@ public class GamePanel extends JPanel implements Runnable {
         if (activeP.canMove(activeP.col, activeP.row)) {
             canMove = true;
 
-            if (activeP.hittingP != null) {
+            if (activeP.hittingP != null)
                 simPieces.remove(activeP.hittingP.getIndex());
-            }
 
             checkCastling();
 
@@ -280,19 +253,9 @@ public class GamePanel extends JPanel implements Runnable {
     }
 
     private boolean canPromote() {
-        if (activeP.type == Type.PAWN) {
-            if ((currentColor == WHITE && activeP.row == 0) ||
-                    (currentColor == BLACK && activeP.row == 7)) {
-
-                promoPieces.clear();
-                promoPieces.add(new Rook(currentColor, 9, 2));
-                promoPieces.add(new Knight(currentColor, 9, 3));
-                promoPieces.add(new Bishop(currentColor, 9, 4));
-                promoPieces.add(new Queen(currentColor, 9, 5));
-
-                return true;
-            }
-        }
+        if (activeP.type == Type.PAWN)
+            return (currentColor == WHITE && activeP.row == 0) ||
+                    (currentColor == BLACK && activeP.row == 7);
         return false;
     }
 
@@ -316,20 +279,18 @@ public class GamePanel extends JPanel implements Runnable {
                     promotion = false;
 
                     changePlayer();
+                    checkGameOver();
                 }
             }
         }
     }
 
     private void changePlayer() {
-        if (currentColor == WHITE) currentColor = BLACK;
-        else currentColor = WHITE;
-
+        currentColor = (currentColor == WHITE) ? BLACK : WHITE;
         activeP = null;
 
-        if (turnListener != null) {
+        if (turnListener != null)
             turnListener.onTurnChanged(currentColor);
-        }
     }
 
     private void checkCastling() {
@@ -337,6 +298,28 @@ public class GamePanel extends JPanel implements Runnable {
             if (castlingP.col == 0) castlingP.col += 3;
             else if (castlingP.col == 7) castlingP.col -= 2;
             castlingP.x = castlingP.getX(castlingP.col);
+        }
+    }
+
+    private void checkGameOver() {
+        boolean whiteKingAlive = false;
+        boolean blackKingAlive = false;
+
+        for (Piece p : pieces) {
+            if (p.type == Type.KING) {
+                if (p.color == WHITE) whiteKingAlive = true;
+                if (p.color == BLACK) blackKingAlive = true;
+            }
+        }
+
+        if (!whiteKingAlive || !blackKingAlive) {
+            gameover = true;
+            int winner = whiteKingAlive ? WHITE : BLACK;
+
+            if (gameOverListener != null)
+                gameOverListener.onGameOver(winner);
+
+            repaint();
         }
     }
 
@@ -348,42 +331,22 @@ public class GamePanel extends JPanel implements Runnable {
 
         board.draw(g2);
 
-        for (Piece p : simPieces) {
+        for (Piece p : simPieces)
             p.draw(g2);
-        }
 
         if (activeP != null) {
-
             if (canMove) {
-                if (isIllegal(activeP)) g2.setColor(Color.gray);
-                else g2.setColor(Color.white);
-
+                g2.setColor(Color.white);
                 g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.7f));
-                g2.fillRect(activeP.col * Board.SQUARE_SIZE,
+                g2.fillRect(
+                        activeP.col * Board.SQUARE_SIZE,
                         activeP.row * Board.SQUARE_SIZE,
-                        Board.SQUARE_SIZE, Board.SQUARE_SIZE);
+                        Board.SQUARE_SIZE,
+                        Board.SQUARE_SIZE
+                );
                 g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 1f));
             }
-
             activeP.draw(g2);
-        }
-
-        if (promotion) {
-            g2.setFont(new Font("Book Antiqua", Font.PLAIN, 40));
-            g2.drawString("Promote to:", 50, 100);
-
-            for (Piece piece : promoPieces) {
-                g2.drawImage(piece.image,
-                        piece.getX(piece.col),
-                        piece.getY(piece.row),
-                        Board.SQUARE_SIZE,
-                        Board.SQUARE_SIZE,
-                        null);
-            }
         }
     }
 }
-
-
-
-
