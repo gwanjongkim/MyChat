@@ -48,6 +48,15 @@ public final class ChatPanel extends JPanel {
         int length;
         javax.swing.Timer ttlTimer;
     }
+    // ChatPanel.java 내부에 유틸 추가
+    private static String resolveIPv4(String host) throws UnknownHostException {
+        // IPv4만 강제로 선택
+        for (InetAddress a : InetAddress.getAllByName(host)) {
+            if (a instanceof Inet4Address) return a.getHostAddress();
+        }
+        // 못 찾으면 원본 그대로 (혹시 IPv6만 있는 환경)
+        return host;
+    }
 
     private final Map<String, TypingEntry> typingEntries = new HashMap<>();
 
@@ -145,6 +154,8 @@ public final class ChatPanel extends JPanel {
     private void connect() {
         try {
             String host = tHost.getText().trim();
+            host = resolveIPv4(host);   // ← 여기서 IPv4로 치환
+            tHost.setText(host);        // UI에도 IPv4 문자열 저장
             int port = Integer.parseInt(tPort.getText().trim());
 
             socket = new Socket();
@@ -234,8 +245,8 @@ public final class ChatPanel extends JPanel {
     // ==============================
     public void sendMove(int fromCol, int fromRow, int toCol, int toRow, int color) {
         try {
-            MoveMessage m = new MoveMessage(from(), fromCol, fromRow, toCol, toRow, color);
-            send(m);
+//            MoveMessage m = new MoveMessage(from(), fromCol, fromRow, toCol, toRow, color);
+//            send(m);
         } catch (Exception ignored) {}
     }
 
