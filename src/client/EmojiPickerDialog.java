@@ -20,15 +20,19 @@ public final class EmojiPickerDialog extends JDialog {
         super(owner, "Pick a sticker", true);
         this.listener = listener;
         setLayout(new BorderLayout());
-        var panel = new JPanel(new GridLayout(0, 6, 8, 8));
+        var panel = new JPanel(new GridLayout(2, 3, 8, 8));
         panel.setBorder(BorderFactory.createEmptyBorder(8,8,8,8));
 
-        File dir = new File("emojis");
+        File dir = new File("./res/emojis");
         List<File> images = new ArrayList<>();
         if (dir.isDirectory()) {
-            for (File f : dir.listFiles()) {
+            File[] files = dir.listFiles();
+            for (File f : files) {
                 String n = f.getName().toLowerCase();
-                if (n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".gif")) images.add(f);
+                if (n.endsWith(".png") || n.endsWith(".jpg") ||
+                        n.endsWith(".jpeg") || n.endsWith(".gif")) {
+                    images.add(f);
+                }
             }
         }
         if (images.isEmpty()) {

@@ -8,13 +8,14 @@ import java.awt.*;
 
 public class ChessGameFrame extends JFrame {
 
-    public ChessGameFrame(String player1Name, String player2Name) {
+    public ChessGameFrame(String player1Name, String player2Name, int myColor) {
         super("Java Chess");
 
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
 
-        GamePanel chessBoard = new GamePanel();
+        GamePanel chessBoard = new GamePanel(myColor);
+
         RightPanel right = new RightPanel(player1Name, player2Name);
         ChatPanel chatPanel = right.getChatPanel();
 
@@ -43,6 +44,7 @@ public class ChessGameFrame extends JFrame {
         setLocationRelativeTo(null);
         setVisible(true);
     }
+
 
     private void showGameOverDialog(int winnerColor) {
         JDialog dialog = new JDialog(this, "게임 종료", true);

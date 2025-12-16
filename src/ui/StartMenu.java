@@ -1,5 +1,6 @@
 package ui;
 
+
 import javax.swing.*;
 import java.awt.*;
 
@@ -29,13 +30,13 @@ public class StartMenu extends JFrame {
 
         // ★ 플레이어1이 White, 플레이어2가 Black
         btn1.addActionListener(e -> {
-            new ChessGameFrame("플레이어1", "플레이어2");
+            new ChessGameFrame("플레이어1", "플레이어2", simplechess.main.GamePanel.WHITE);
             dispose();
         });
 
         // ★ 이 버튼을 누르면 플레이어2가 White, 플레이어1이 Black
         btn2.addActionListener(e -> {
-            new ChessGameFrame("플레이어2", "플레이어1");
+            new ChessGameFrame("플레이어2", "플레이어1", simplechess.main.GamePanel.BLACK);
             dispose();
         });
 

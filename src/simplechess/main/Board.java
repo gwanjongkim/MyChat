@@ -28,7 +28,12 @@ public class Board {
                     c = 0;
                 }
 
-                g2.fillRect(col * SQUARE_SIZE, row * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE);
+                g2.fillRect(
+                        GamePanel.toScreenX(col),
+                        GamePanel.toScreenY(row),
+                        SQUARE_SIZE,
+                        SQUARE_SIZE
+                );
             }
             if(c == 0) {
             	c = 1;

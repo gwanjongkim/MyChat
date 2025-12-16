@@ -7,6 +7,26 @@ import simplechess.piece.*;
 
 public class GamePanel extends JPanel implements Runnable {
 
+    //   내 플레이어 색 / 뷰 설정
+    public void setMyColor(int color) {
+        myColor = color;
+        // color는 GamePanel.WHITE 또는 GamePanel.BLACK 를 넘겨주면 됨
+        if (color == WHITE) {
+            blackView = false;   // 백 시점
+        } else {
+            blackView = true;    // 흑 시점으로 보드 뒤집기
+        }
+        // 방향이 바뀌었으니, 모든 말들의 위치를 새로 계산
+        for (Piece p : pieces) {
+            p.x = p.getX(p.col);
+            p.y = p.getY(p.row);
+           }
+        // simPieces도 같은 객체를 참조하지만, 혹시를 위해 동기화
+        copyPieces(pieces, simPieces);
+        // 필요하면 바로 다시 그리기
+        repaint();
+    }
+
     public interface TurnListener {
         void onTurnChanged(int currentColor);
     }
@@ -79,6 +99,7 @@ public class GamePanel extends JPanel implements Runnable {
     Board board = new Board();
     Mouse mouse = new Mouse();
 
+    public static boolean blackView = false;   // true 면 흑(플레이어2) 관점으로 그림
     public static ArrayList<Piece> pieces = new ArrayList<>();
     public static ArrayList<Piece> simPieces = new ArrayList<>();
     ArrayList<Piece> promoPieces = new ArrayList<>();
@@ -88,26 +109,35 @@ public class GamePanel extends JPanel implements Runnable {
 
     public static final int WHITE = 0;
     public static final int BLACK = 1;
-    int currentColor = WHITE;
+    private int currentColor = WHITE;
+    private Piece selected = null;
+    int myColor      = WHITE;   // 내가 담당하는 말 색 (setMyColor로 설정)
+    private boolean soloMode = false; // 혼자 테스트할 때만 true로
+
 
     boolean canMove;
     boolean validSquare;
     boolean promotion;
     boolean gameover;
 
-    public GamePanel() {
+    public GamePanel(int myColor) {
         setPreferredSize(new Dimension(WIDTH, HEIGHT));
         setBackground(Color.black);
 
         addMouseMotionListener(mouse);
         addMouseListener(mouse);
 
+        setMyColor(myColor);//시점을 정한다
+
         setPieces();
         copyPieces(pieces, simPieces);
 
         launchGame();
     }
-
+    // 기본 생성자는 WHITE 기준
+    public GamePanel() {
+        this(WHITE);
+    }
     public void launchGame() {
         gameThread = new Thread(this);
         gameThread.start();
@@ -135,6 +165,29 @@ public class GamePanel extends JPanel implements Runnable {
         pieces.add(new Bishop(BLACK, 5, 0));
         pieces.add(new Queen(BLACK, 3, 0));
         pieces.add(new King(BLACK, 4, 0));
+    }
+    // 논리 보드 좌표(col,row) -> 화면 픽셀 X,Y
+    public static int toScreenX(int col) {
+        return blackView
+                ? (7 - col) * Board.SQUARE_SIZE
+                : col * Board.SQUARE_SIZE;
+    }
+
+    public static int toScreenY(int row) {
+        return blackView
+                ? (7 - row) * Board.SQUARE_SIZE
+                : row * Board.SQUARE_SIZE;
+    }
+
+    // 화면 픽셀 x,y -> 논리 보드 좌표(col,row)
+    public static int toBoardColFromPixel(int x) {
+        int col = (x + Board.HALF_SQUARE_SIZE) / Board.SQUARE_SIZE;
+        return blackView ? 7 - col : col;
+    }
+
+    public static int toBoardRowFromPixel(int y) {
+        int row = (y + Board.HALF_SQUARE_SIZE) / Board.SQUARE_SIZE;
+        return blackView ? 7 - row : row;
     }
 
     private void copyPieces(ArrayList<Piece> source, ArrayList<Piece> target) {
@@ -169,14 +222,20 @@ public class GamePanel extends JPanel implements Runnable {
             promoting();
             return;
         }
+        if(!soloMode && currentColor != myColor) {return;}
 
         if (mouse.pressed) {
             if (activeP == null) {
+                //화면 좌표(mouse.x, mouse.y) → 논리 보드 좌표로 변환
+                int col = toBoardColFromPixel(mouse.x);
+                int row = toBoardRowFromPixel(mouse.y);
+
                 for (Piece piece : simPieces) {
                     if (piece.color == currentColor &&
-                            piece.col == mouse.x / Board.SQUARE_SIZE &&
-                            piece.row == mouse.y / Board.SQUARE_SIZE) {
+                            piece.col == col &&
+                            piece.row ==row) {
                         activeP = piece;
+                        break;
                     }
                 }
             } else simulate();
@@ -261,9 +320,13 @@ public class GamePanel extends JPanel implements Runnable {
 
     private void promoting() {
         if (mouse.pressed) {
+            // 화면 → 보드 좌표
+            int col = toBoardColFromPixel(mouse.x);
+            int row = toBoardRowFromPixel(mouse.y);
+
             for (Piece piece : promoPieces) {
-                if (piece.col == mouse.x / Board.SQUARE_SIZE &&
-                        piece.row == mouse.y / Board.SQUARE_SIZE) {
+                if (piece.col == col &&
+                        piece.row == row) {
 
                     switch (piece.type) {
                         case ROOK:   simPieces.add(new Rook(currentColor, activeP.col, activeP.row)); break;
@@ -339,8 +402,8 @@ public class GamePanel extends JPanel implements Runnable {
                 g2.setColor(Color.white);
                 g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.7f));
                 g2.fillRect(
-                        activeP.col * Board.SQUARE_SIZE,
-                        activeP.row * Board.SQUARE_SIZE,
+                        GamePanel.toScreenX(activeP.col),
+                        GamePanel.toScreenY(activeP.row),
                         Board.SQUARE_SIZE,
                         Board.SQUARE_SIZE
                 );

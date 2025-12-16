@@ -2,6 +2,8 @@ package client;
 
 import common.*;
 import codec.*;
+import client.EmojiPickerDialog;
+
 
 import javax.imageio.ImageIO;
 import javax.swing.*;
@@ -113,7 +115,7 @@ public final class ChatPanel extends JPanel {
         bDisconnect.addActionListener(e -> disconnect());
         bSend.addActionListener(e -> sendText());
         tInput.addActionListener(e -> sendText());
-        bEmoji.addActionListener(e -> openPicker());
+        bEmoji.addActionListener(e -> emojiPicker());
 
         // 입력 중 상태 감지
         tInput.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
@@ -231,6 +233,10 @@ public final class ChatPanel extends JPanel {
                                 mm.toRow(),
                                 mm.color()
                         );
+                    } {
+
+                        // 2) 채팅창에 "플레이어: e2 -> e4" 한 줄 남기기
+                        append(formatMoveLine(mm));
                     }
                 }
             }
@@ -245,13 +251,13 @@ public final class ChatPanel extends JPanel {
     // ==============================
     public void sendMove(int fromCol, int fromRow, int toCol, int toRow, int color) {
         try {
-//            MoveMessage m = new MoveMessage(from(), fromCol, fromRow, toCol, toRow, color);
-//            send(m);
+            MoveMessage m = new MoveMessage(from(), fromCol, fromRow, toCol, toRow, color);
+            send(m);
         } catch (Exception ignored) {}
     }
 
     // ==============================
-    // 텍스트 / 이미지 전송
+    // 텍스트
     // ==============================
     private void sendText() {
         String text = tInput.getText().trim();
@@ -268,20 +274,29 @@ public final class ChatPanel extends JPanel {
             append("[error] " + ex.getMessage() + "\n");
         }
     }
-
-    private void openPicker() {
-        JFileChooser fc = new JFileChooser();
-        if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            File file = fc.getSelectedFile();
+    // 이미지 전송
+    private void emojiPicker() {
+        Window w = SwingUtilities.getWindowAncestor(this);
+        Frame owner = (w instanceof Frame) ? (Frame) w : null;
+        EmojiPickerDialog dialog = new EmojiPickerDialog(owner, file -> {
             try {
+                // res/emojis 안의 선택된 이미지 파일을 그대로 읽어서 전송
                 byte[] bytes = java.nio.file.Files.readAllBytes(file.toPath());
-                var m = new ImageMessage(from(), bytes, guessMime(file.getName()), 128, 128);
+                var m = new ImageMessage(
+                        from(),
+                        bytes,
+                        guessMime(file.getName()),
+                        128,
+                        128
+                );
                 send(m);
 
             } catch (Exception ex) {
                 append("[error] " + ex.getMessage() + "\n");
             }
-        }
+        });
+
+        dialog.setVisible(true);
     }
 
     private String guessMime(String name) {
@@ -322,12 +337,38 @@ public final class ChatPanel extends JPanel {
                 var img = ImageIO.read(new ByteArrayInputStream(im.data()));
                 if (img == null) return;
 
-                Image scaled = img.getScaledInstance(128, 128, Image.SCALE_SMOOTH);
+                // 항상 문서 맨 끝으로 커서 이동
+                javax.swing.text.StyledDocument doc = chat.getStyledDocument();
+                chat.setCaretPosition(doc.getLength());
+
+                // 1) "보낸사람: " 텍스트 먼저 출력
+                doc.insertString(doc.getLength(), im.from() + ": ", null);
+
+                // 2) 그 뒤에 이모지 아이콘 삽입
+                chat.setCaretPosition(doc.getLength());   // 다시 끝으로
+                Image scaled = img.getScaledInstance(64, 64, Image.SCALE_SMOOTH);
                 chat.insertIcon(new ImageIcon(scaled));
-                chat.replaceSelection("\n");
+
+                // 3) 마지막에 줄바꿈 문자 추가 (replaceSelection 말고 insertString)
+                chat.setCaretPosition(doc.getLength());   // 아이콘 뒤로 이동
+                doc.insertString(doc.getLength(), "\n", null);
 
             } catch (Exception ignored) {}
         });
+    }
+
+    // 체스 좌표를 채팅 문자열로 변환해서 한 줄 만들어주는 헬퍼
+    private String formatMoveLine(MoveMessage mm) {
+        // col,row 가 0~7 이라고 가정하고 체스 표기 (a1 ~ h8)로 변환
+        char fromFile = (char) ('a' + mm.fromCol());    // 0→'a', 1→'b' ...
+        int  fromRank = 8 - mm.fromRow();              // 0→8, 7→1
+
+        char toFile   = (char) ('a' + mm.toCol());
+        int  toRank   = 8 - mm.toRow();
+
+        // 예: "플레이어1: e2 -> e4"
+        return String.format("%s: %c%d -> %c%d\n",
+                mm.from(), fromFile, fromRank, toFile, toRank);
     }
 
     // ==============================
@@ -341,14 +382,15 @@ public final class ChatPanel extends JPanel {
                     old.ttlTimer.restart();
                     return;
                 }
-
-                var doc = chat.getStyledDocument();
+                javax.swing.text.StyledDocument doc = chat.getStyledDocument();
+                //var doc = chat.getStyledDocument();
                 String line = "[typing] " + user + " 입력 중...\n";
-                var pos = doc.createPosition(doc.getLength());
+                //var pos = doc.createPosition(doc.getLength());
+                int start = doc.getLength();
                 doc.insertString(doc.getLength(), line, null);
 
                 TypingEntry ent = new TypingEntry();
-                ent.start = pos;
+                ent.start = doc.createPosition(start);;
                 ent.length = line.length();
 
                 ent.ttlTimer = new javax.swing.Timer(TYPING_TTL_MS,
@@ -359,7 +401,7 @@ public final class ChatPanel extends JPanel {
                 typingEntries.put(user, ent);
                 chat.setCaretPosition(doc.getLength());
 
-            } catch (Exception ignored) {}
+            } catch (javax.swing.text.BadLocationException ignored) {}
         });
     }
 
@@ -372,7 +414,8 @@ public final class ChatPanel extends JPanel {
                 ent.ttlTimer.stop();
 
             try {
-                var doc = chat.getStyledDocument();
+                //var doc = chat.getStyledDocument();
+                javax.swing.text.StyledDocument doc = chat.getStyledDocument();
                 int off = ent.start.getOffset();
                 int len = Math.min(ent.length, doc.getLength() - off);
 

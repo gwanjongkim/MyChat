@@ -49,21 +49,20 @@ public class Piece {
         return image;
     }
 
-
+    // Piece.java
     public int getX(int col) {
-        return col * Board.SQUARE_SIZE;
+        return simplechess.main.GamePanel.toScreenX(col);
     }
-
     public int getY(int row) {
-        return row * Board.SQUARE_SIZE;
+        return simplechess.main.GamePanel.toScreenY(row);
     }
     public int getCol(int x) {
-        return (x + Board.HALF_SQUARE_SIZE) / Board.SQUARE_SIZE;
+        return simplechess.main.GamePanel.toBoardColFromPixel(x);
+    }
+    public int getRow(int y) {
+        return simplechess.main.GamePanel.toBoardRowFromPixel(y);
     }
 
-    public int getRow(int y) {
-        return (y + Board.HALF_SQUARE_SIZE) / Board.SQUARE_SIZE;
-    }
     public int getIndex() {
         for (int index = 0; index < GamePanel.simPieces.size(); index++) {
             if (GamePanel.simPieces.get(index) == this) {
