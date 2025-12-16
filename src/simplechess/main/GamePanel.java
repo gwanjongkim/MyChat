@@ -179,16 +179,20 @@ public class GamePanel extends JPanel implements Runnable {
                 : row * Board.SQUARE_SIZE;
     }
 
-    // 화면 픽셀 x,y -> 논리 보드 좌표(col,row)
     public static int toBoardColFromPixel(int x) {
-        int col = (x + Board.HALF_SQUARE_SIZE) / Board.SQUARE_SIZE;
-        return blackView ? 7 - col : col;
+        int colScreen = x / Board.SQUARE_SIZE;
+        if (colScreen < 0) colScreen = 0;
+        if (colScreen > 7) colScreen = 7;
+        return blackView ? 7 - colScreen : colScreen;
     }
 
     public static int toBoardRowFromPixel(int y) {
-        int row = (y + Board.HALF_SQUARE_SIZE) / Board.SQUARE_SIZE;
-        return blackView ? 7 - row : row;
+        int rowScreen = y / Board.SQUARE_SIZE;
+        if (rowScreen < 0) rowScreen = 0;
+        if (rowScreen > 7) rowScreen = 7;
+        return blackView ? 7 - rowScreen : rowScreen;
     }
+
 
     private void copyPieces(ArrayList<Piece> source, ArrayList<Piece> target) {
         target.clear();
