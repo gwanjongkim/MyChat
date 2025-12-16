@@ -7,28 +7,33 @@ import simplechess.piece.*;
 
 public class GamePanel extends JPanel implements Runnable {
 
-    //   내 플레이어 색 / 뷰 설정
     public void setMyColor(int color) {
         myColor = color;
-        // color는 GamePanel.WHITE 또는 GamePanel.BLACK 를 넘겨주면 됨
         if (color == WHITE) {
-            blackView = false;   // 백 시점
+            blackView = false;
         } else {
-            blackView = true;    // 흑 시점으로 보드 뒤집기
+            blackView = true;
         }
-        // 방향이 바뀌었으니, 모든 말들의 위치를 새로 계산
         for (Piece p : pieces) {
             p.x = p.getX(p.col);
             p.y = p.getY(p.row);
-           }
-        // simPieces도 같은 객체를 참조하지만, 혹시를 위해 동기화
+        }
         copyPieces(pieces, simPieces);
-        // 필요하면 바로 다시 그리기
         repaint();
     }
 
+    public interface CheckListener {
+        void onCheck(int kingColor);
+    }
+
+    private CheckListener checkListener;
+
     public interface TurnListener {
         void onTurnChanged(int currentColor);
+    }
+
+    public void setCheckListener(CheckListener listener) {
+        this.checkListener = listener;
     }
 
     private TurnListener turnListener;
@@ -84,9 +89,9 @@ public class GamePanel extends JPanel implements Runnable {
         copyPieces(pieces, simPieces);
 
         changePlayer();
+        checkCheck();
 
         repaint();
-
         checkGameOver();
     }
 
@@ -99,7 +104,7 @@ public class GamePanel extends JPanel implements Runnable {
     Board board = new Board();
     Mouse mouse = new Mouse();
 
-    public static boolean blackView = false;   // true 면 흑(플레이어2) 관점으로 그림
+    public static boolean blackView = false;
     public static ArrayList<Piece> pieces = new ArrayList<>();
     public static ArrayList<Piece> simPieces = new ArrayList<>();
     ArrayList<Piece> promoPieces = new ArrayList<>();
@@ -111,9 +116,8 @@ public class GamePanel extends JPanel implements Runnable {
     public static final int BLACK = 1;
     private int currentColor = WHITE;
     private Piece selected = null;
-    int myColor      = WHITE;   // 내가 담당하는 말 색 (setMyColor로 설정)
-    private boolean soloMode = false; // 혼자 테스트할 때만 true로
-
+    int myColor = WHITE;
+    private boolean soloMode = false;
 
     boolean canMove;
     boolean validSquare;
@@ -127,17 +131,18 @@ public class GamePanel extends JPanel implements Runnable {
         addMouseMotionListener(mouse);
         addMouseListener(mouse);
 
-        setMyColor(myColor);//시점을 정한다
+        setMyColor(myColor);
 
         setPieces();
         copyPieces(pieces, simPieces);
 
         launchGame();
     }
-    // 기본 생성자는 WHITE 기준
+
     public GamePanel() {
         this(WHITE);
     }
+
     public void launchGame() {
         gameThread = new Thread(this);
         gameThread.start();
@@ -166,17 +171,13 @@ public class GamePanel extends JPanel implements Runnable {
         pieces.add(new Queen(BLACK, 3, 0));
         pieces.add(new King(BLACK, 4, 0));
     }
-    // 논리 보드 좌표(col,row) -> 화면 픽셀 X,Y
+
     public static int toScreenX(int col) {
-        return blackView
-                ? (7 - col) * Board.SQUARE_SIZE
-                : col * Board.SQUARE_SIZE;
+        return blackView ? (7 - col) * Board.SQUARE_SIZE : col * Board.SQUARE_SIZE;
     }
 
     public static int toScreenY(int row) {
-        return blackView
-                ? (7 - row) * Board.SQUARE_SIZE
-                : row * Board.SQUARE_SIZE;
+        return blackView ? (7 - row) * Board.SQUARE_SIZE : row * Board.SQUARE_SIZE;
     }
 
     public static int toBoardColFromPixel(int x) {
@@ -192,7 +193,6 @@ public class GamePanel extends JPanel implements Runnable {
         if (rowScreen > 7) rowScreen = 7;
         return blackView ? 7 - rowScreen : rowScreen;
     }
-
 
     private void copyPieces(ArrayList<Piece> source, ArrayList<Piece> target) {
         target.clear();
@@ -226,18 +226,17 @@ public class GamePanel extends JPanel implements Runnable {
             promoting();
             return;
         }
-        if(!soloMode && currentColor != myColor) {return;}
+        if (!soloMode && currentColor != myColor) return;
 
         if (mouse.pressed) {
             if (activeP == null) {
-                //화면 좌표(mouse.x, mouse.y) → 논리 보드 좌표로 변환
                 int col = toBoardColFromPixel(mouse.x);
                 int row = toBoardRowFromPixel(mouse.y);
 
                 for (Piece piece : simPieces) {
                     if (piece.color == currentColor &&
                             piece.col == col &&
-                            piece.row ==row) {
+                            piece.row == row) {
                         activeP = piece;
                         break;
                     }
@@ -259,6 +258,8 @@ public class GamePanel extends JPanel implements Runnable {
 
                     if (moveListener != null)
                         moveListener.onMoveCommitted(fromCol, fromRow, toCol, toRow, currentColor);
+
+                    checkCheck();
 
                     if (canPromote()) promotion = true;
                     else {
@@ -288,10 +289,8 @@ public class GamePanel extends JPanel implements Runnable {
 
         activeP.x = mouse.x - Board.HALF_SQUARE_SIZE;
         activeP.y = mouse.y - Board.HALF_SQUARE_SIZE;
-        activeP.col = GamePanel.toBoardColFromPixel(mouse.x);
-        activeP.row = GamePanel.toBoardRowFromPixel(mouse.y);
-
-
+        activeP.col = toBoardColFromPixel(mouse.x);
+        activeP.row = toBoardRowFromPixel(mouse.y);
 
         if (activeP.canMove(activeP.col, activeP.row)) {
             canMove = true;
@@ -317,6 +316,21 @@ public class GamePanel extends JPanel implements Runnable {
         return false;
     }
 
+    private void checkCheck() {
+        for (Piece king : pieces) {
+            if (king.type == Type.KING) {
+                for (Piece p : pieces) {
+                    if (p.color != king.color &&
+                            p.canMove(king.col, king.row)) {
+                        if (checkListener != null)
+                            checkListener.onCheck(king.color);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
     private boolean canPromote() {
         if (activeP.type == Type.PAWN)
             return (currentColor == WHITE && activeP.row == 0) ||
@@ -326,19 +340,16 @@ public class GamePanel extends JPanel implements Runnable {
 
     private void promoting() {
         if (mouse.pressed) {
-            // 화면 → 보드 좌표
             int col = toBoardColFromPixel(mouse.x);
             int row = toBoardRowFromPixel(mouse.y);
 
             for (Piece piece : promoPieces) {
-                if (piece.col == col &&
-                        piece.row == row) {
-
+                if (piece.col == col && piece.row == row) {
                     switch (piece.type) {
-                        case ROOK:   simPieces.add(new Rook(currentColor, activeP.col, activeP.row)); break;
-                        case KNIGHT: simPieces.add(new Knight(currentColor, activeP.col, activeP.row)); break;
-                        case BISHOP: simPieces.add(new Bishop(currentColor, activeP.col, activeP.row)); break;
-                        case QUEEN:  simPieces.add(new Queen(currentColor, activeP.col, activeP.row)); break;
+                        case ROOK -> simPieces.add(new Rook(currentColor, activeP.col, activeP.row));
+                        case KNIGHT -> simPieces.add(new Knight(currentColor, activeP.col, activeP.row));
+                        case BISHOP -> simPieces.add(new Bishop(currentColor, activeP.col, activeP.row));
+                        case QUEEN -> simPieces.add(new Queen(currentColor, activeP.col, activeP.row));
                     }
 
                     simPieces.remove(activeP.getIndex());
@@ -408,8 +419,8 @@ public class GamePanel extends JPanel implements Runnable {
                 g2.setColor(Color.white);
                 g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.7f));
                 g2.fillRect(
-                        GamePanel.toScreenX(activeP.col),
-                        GamePanel.toScreenY(activeP.row),
+                        toScreenX(activeP.col),
+                        toScreenY(activeP.row),
                         Board.SQUARE_SIZE,
                         Board.SQUARE_SIZE
                 );
@@ -419,3 +430,4 @@ public class GamePanel extends JPanel implements Runnable {
         }
     }
 }
+

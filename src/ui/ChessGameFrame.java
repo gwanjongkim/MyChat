@@ -37,6 +37,11 @@ public class ChessGameFrame extends JFrame {
             );
         });
 
+        chessBoard.setCheckListener(kingColor -> {
+            String color = (kingColor == GamePanel.WHITE) ? "White" : "Black";
+            chatPanel.sendSystemMessage(color + " 왕이 체크 입니다!");
+        });
+
         add(chessBoard, BorderLayout.CENTER);
         add(right, BorderLayout.EAST);
 

@@ -299,6 +299,7 @@ public final class ChatPanel extends JPanel {
         dialog.setVisible(true);
     }
 
+
     private String guessMime(String name) {
         name = name.toLowerCase();
         if (name.endsWith(".png")) return "image/png";
@@ -355,6 +356,12 @@ public final class ChatPanel extends JPanel {
 
             } catch (Exception ignored) {}
         });
+    }
+
+    public void sendSystemMessage(String text) {
+        try {
+            send(new TextMessage("system", text));
+        } catch (Exception ignored) {}
     }
 
     // 체스 좌표를 채팅 문자열로 변환해서 한 줄 만들어주는 헬퍼
