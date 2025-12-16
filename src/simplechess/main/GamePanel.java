@@ -288,8 +288,10 @@ public class GamePanel extends JPanel implements Runnable {
 
         activeP.x = mouse.x - Board.HALF_SQUARE_SIZE;
         activeP.y = mouse.y - Board.HALF_SQUARE_SIZE;
-        activeP.col = activeP.getCol(activeP.x);
-        activeP.row = activeP.getRow(activeP.y);
+        activeP.col = GamePanel.toBoardColFromPixel(mouse.x);
+        activeP.row = GamePanel.toBoardRowFromPixel(mouse.y);
+
+
 
         if (activeP.canMove(activeP.col, activeP.row)) {
             canMove = true;

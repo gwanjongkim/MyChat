@@ -16,7 +16,7 @@ public class ChessGameFrame extends JFrame {
 
         GamePanel chessBoard = new GamePanel(myColor);
 
-        RightPanel right = new RightPanel(player1Name, player2Name);
+        RightPanel right = new RightPanel(player1Name, player2Name, myColor);
         ChatPanel chatPanel = right.getChatPanel();
 
         chessBoard.setTurnListener(right);
@@ -45,14 +45,13 @@ public class ChessGameFrame extends JFrame {
         setVisible(true);
     }
 
-
     private void showGameOverDialog(int winnerColor) {
         JDialog dialog = new JDialog(this, "게임 종료", true);
         dialog.setSize(400, 250);
         dialog.setLayout(new BorderLayout());
         dialog.setLocationRelativeTo(this);
 
-        String winner = (winnerColor == 0 ? "White" : "Black");
+        String winner = (winnerColor == GamePanel.WHITE ? "White" : "Black");
 
         JPanel panel = new JPanel();
         panel.setBackground(new Color(30, 30, 30));
@@ -79,7 +78,7 @@ public class ChessGameFrame extends JFrame {
         restartBtn.addActionListener(e -> {
             dialog.dispose();
             dispose();
-            new StartMenu(); // 시작 메뉴로 이동 (네가 이미 가지고 있는 클래스)
+            new StartMenu();
         });
 
         exitBtn.addActionListener(e -> {
