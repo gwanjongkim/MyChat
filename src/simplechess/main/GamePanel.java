@@ -347,6 +347,7 @@ public class GamePanel extends JPanel implements Runnable {
 
     private Piece promotionPawn;
 
+    //프로모션 구현
     private void promoting() {
         // update()가 매 프레임 호출되므로 입력창이 계속 뜨는 걸 방지
         if (promotionChoiceRequested) return;
