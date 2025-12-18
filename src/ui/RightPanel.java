@@ -52,7 +52,10 @@ public class RightPanel extends JPanel implements GamePanel.TurnListener {
         info.add(lblP2);
 
         chatPanel = new ChatPanel();
-        chatPanel.setDefaultTarget("localhost", 54321, player1Name);
+        String host = System.getProperty("chat.host", "localhost");
+        int port = Integer.parseInt(System.getProperty("chat.port", "54321"));
+
+        chatPanel.setDefaultTarget(host, port, player1Name);
         chatPanel.hideTopBar();
         chatPanel.autoConnect();
 

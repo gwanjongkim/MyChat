@@ -26,6 +26,7 @@ public final class ChatServer {
         factory.register("text",  new TextMessageHandler());
         factory.register("image", new ImageMessageHandler());
         factory.register("typing", new TypingMessageHandler());
+        factory.register("move", new MoveMessageHandler());
 
     }
 
