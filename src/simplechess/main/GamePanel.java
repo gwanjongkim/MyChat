@@ -4,6 +4,8 @@ import java.awt.*;
 import java.util.ArrayList;
 import javax.swing.JPanel;
 import simplechess.piece.*;
+import javax.swing.JOptionPane;
+
 
 public class GamePanel extends JPanel implements Runnable {
 
@@ -123,6 +125,8 @@ public class GamePanel extends JPanel implements Runnable {
     boolean validSquare;
     boolean promotion;
     boolean gameover;
+    boolean promotionChoiceRequested;
+
 
     public GamePanel(int myColor) {
         setPreferredSize(new Dimension(WIDTH, HEIGHT));
@@ -261,8 +265,11 @@ public class GamePanel extends JPanel implements Runnable {
 
                     checkCheck();
 
-                    if (canPromote()) promotion = true;
-                    else {
+                    if (canPromote()) {
+                        promotion = true;
+                        promotionChoiceRequested = false; // 프로모션 시작할 때만 입력 받게 초기화
+                        promotionPawn = activeP;
+                    } else {
                         changePlayer();
                         checkGameOver();
                     }
@@ -270,7 +277,7 @@ public class GamePanel extends JPanel implements Runnable {
                     copyPieces(pieces, simPieces);
                     activeP.resetPosition();
                 }
-                activeP = null;
+                if (!promotion) activeP = null;
             }
         }
     }
@@ -338,32 +345,46 @@ public class GamePanel extends JPanel implements Runnable {
         return false;
     }
 
+    private Piece promotionPawn;
+
     private void promoting() {
-        if (mouse.pressed) {
-            int col = toBoardColFromPixel(mouse.x);
-            int row = toBoardRowFromPixel(mouse.y);
+        // update()가 매 프레임 호출되므로 입력창이 계속 뜨는 걸 방지
+        if (promotionChoiceRequested) return;
+        promotionChoiceRequested = true;
 
-            for (Piece piece : promoPieces) {
-                if (piece.col == col && piece.row == row) {
-                    switch (piece.type) {
-                        case ROOK -> simPieces.add(new Rook(currentColor, activeP.col, activeP.row));
-                        case KNIGHT -> simPieces.add(new Knight(currentColor, activeP.col, activeP.row));
-                        case BISHOP -> simPieces.add(new Bishop(currentColor, activeP.col, activeP.row));
-                        case QUEEN -> simPieces.add(new Queen(currentColor, activeP.col, activeP.row));
-                    }
+        System.out.println("프로모션! 1번 퀸 2번 비숍 3번 나이트 4번 룩");
 
-                    simPieces.remove(activeP.getIndex());
-                    copyPieces(simPieces, pieces);
+        String input = JOptionPane.showInputDialog(
+                this,
+                "프로모션!\n1=퀸 2=비숍 3=나이트 4=룩\n번호(1~4)를 입력하세요:"
+        );
 
-                    activeP = null;
-                    promotion = false;
+        int choice = 1; // 기본: 퀸
+        try {
+            if (input != null) choice = Integer.parseInt(input.trim());
+        } catch (Exception ignored) {}
 
-                    changePlayer();
-                    checkGameOver();
-                }
-            }
+        switch (choice) {
+            case 4 -> simPieces.add(new Rook(currentColor, activeP.col, activeP.row));
+            case 3 -> simPieces.add(new Knight(currentColor, activeP.col, activeP.row));
+            case 2 -> simPieces.add(new Bishop(currentColor, activeP.col, activeP.row));
+            case 1 -> simPieces.add(new Queen(currentColor, activeP.col, activeP.row));
+            default -> simPieces.add(new Queen(currentColor, activeP.col, activeP.row));
         }
+
+
+        // 기존 폰 제거 + 실제 보드 반영
+        simPieces.remove(activeP.getIndex());
+        copyPieces(simPieces, pieces);
+
+        activeP = null;
+        promotion = false;
+        promotionChoiceRequested = false;
+
+        changePlayer();
+        checkGameOver();
     }
+
 
     private void changePlayer() {
         currentColor = (currentColor == WHITE) ? BLACK : WHITE;
