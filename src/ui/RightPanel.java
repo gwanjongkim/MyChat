@@ -56,7 +56,7 @@ public class RightPanel extends JPanel implements GamePanel.TurnListener {
         int port = Integer.parseInt(System.getProperty("chat.port", "54321"));
 
         chatPanel.setDefaultTarget(host, port, player1Name);
-        chatPanel.hideTopBar();
+       // chatPanel.hideTopBar();
         chatPanel.autoConnect();
 
         chatPanel.appendSystemMessage(player1Name + "으로 접속하셨습니다!\n");
