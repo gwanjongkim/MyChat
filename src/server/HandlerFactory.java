@@ -6,6 +6,10 @@ import common.ImageMessage;
 import common.TypingMessage;
 import common.MoveMessage;
 
+import common.RoomCreateRequest;
+import common.RoomJoinRequest;
+import common.RoomJoined;
+
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 
@@ -19,9 +23,11 @@ public final class HandlerFactory {
         register("text",   new TextMessageHandler());
         register("image",  new ImageMessageHandler());
         register("typing", new TypingMessageHandler());
-
         // ★ 신규 추가: 체스 말 이동 메시지 핸들러
         register("move",   new MoveMessageHandler());
+
+        register("room_create", new RoomCreateHandler());
+        register("room_join", new RoomJoinHandler());
     }
 
     public <T extends ChatMessage> void register(String type, MessageHandler<T> handler) {

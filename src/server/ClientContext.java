@@ -14,6 +14,14 @@ public final class ClientContext implements Runnable {
     private final MessageCodec codec;
     private DataInputStream in;
     private DataOutputStream out;
+    private String roomId = null;
+    private Integer color = null; // GamePanel.WHITE / BLACK
+
+    public String roomId() { return roomId; }
+    public void setRoomId(String roomId) { this.roomId = roomId; }
+
+    public Integer color() { return color; }
+    public void setColor(Integer color) { this.color = color; }
     private volatile boolean running = true;
 
     public ClientContext(Socket socket, ChatServer server, MessageCodec codec) throws IOException {

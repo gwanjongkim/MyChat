@@ -4,33 +4,43 @@ import common.*;
 import codec.*;
 import client.EmojiPickerDialog;
 
-
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import javax.swing.text.BadLocationException;
+import javax.swing.text.StyledDocument;
 import java.awt.*;
 import java.io.*;
 import java.net.*;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public final class ChatPanel extends JPanel {
 
+    // ===== 고정 포트 =====
+    private static final int SERVER_PORT = 54321;
+
+    // ===== UI =====
     public JPanel top;
     public JPanel bottom;
 
-    private JTextField tUser = new JTextField(8);
-    private JTextField tHost = new JTextField(12);
-    private JTextField tPort = new JTextField(5);
+    private final JTextField tUser = new JTextField(8);
+    private final JTextField tHost = new JTextField(12);
 
-    private JButton bConnect = new JButton("Connect");
-    private JButton bDisconnect = new JButton("Disconnect");
+    private final JButton bConnect = new JButton("Connect");
+    private final JButton bDisconnect = new JButton("Disconnect");
 
-    private JTextPane chat = new JTextPane();
-    private JTextField tInput = new JTextField();
-    private JButton bSend = new JButton("Send");
-    private JButton bEmoji = new JButton("EMOJI");
+    private final JTextPane chat = new JTextPane();
+    private final JTextField tInput = new JTextField();
+    private final JButton bSend = new JButton("Send");
+    private final JButton bEmoji = new JButton("EMOJI");
 
+    private final JScrollPane sc = new JScrollPane(chat);
+
+    // 채팅 영역 표시/숨김 (로비/게임 분리용)
+    private boolean chatVisible = true;
+
+    // ===== Net =====
     private Socket socket;
     private DataInputStream in;
     private DataOutputStream out;
@@ -38,6 +48,7 @@ public final class ChatPanel extends JPanel {
 
     private final MessageCodec codec = new JavaObjectCodec();
 
+    // ===== Typing =====
     private long lastTypingSentAt = 0L;
     private static final int TYPING_DEBOUNCE_MS = 800;
     private static final int TYPING_IDLE_MS = 1200;
@@ -50,52 +61,58 @@ public final class ChatPanel extends JPanel {
         int length;
         javax.swing.Timer ttlTimer;
     }
-    // ChatPanel.java 내부에 유틸 추가
-    private static String resolveIPv4(String host) throws UnknownHostException {
-        // IPv4만 강제로 선택
-        for (InetAddress a : InetAddress.getAllByName(host)) {
-            if (a instanceof Inet4Address) return a.getHostAddress();
-        }
-        // 못 찾으면 원본 그대로 (혹시 IPv6만 있는 환경)
-        return host;
-    }
 
     private final Map<String, TypingEntry> typingEntries = new HashMap<>();
 
-    // ==============================
-    //        MoveMessage 전달
-    // ==============================
+    // ===== MoveMessage 전달 =====
     public interface MoveReceiver {
         void onMove(int fromCol, int fromRow, int toCol, int toRow, int color);
     }
-
     private MoveReceiver moveReceiver;
+    public void setMoveReceiver(MoveReceiver r) { this.moveReceiver = r; }
 
-    public void setMoveReceiver(MoveReceiver r) {
-        this.moveReceiver = r;
+    // ===== Room callbacks =====
+    public interface RoomJoinListener { void onJoined(common.RoomJoined joined); }
+    private RoomJoinListener roomJoinListener;
+    public void setRoomJoinListener(RoomJoinListener l) { this.roomJoinListener = l; }
+
+    public interface RoomListListener { void onRoomList(List<common.RoomInfo> rooms); }
+    private RoomListListener roomListListener;
+    public void setRoomListListener(RoomListListener l) { this.roomListListener = l; }
+
+    // ===== IPv4 강제 선택 =====
+    private static String resolveIPv4(String host) throws UnknownHostException {
+        for (InetAddress a : InetAddress.getAllByName(host)) {
+            if (a instanceof Inet4Address) return a.getHostAddress();
+        }
+        return host; // IPv6만 있는 환경이면 그대로
     }
 
     public ChatPanel() {
-
         setPreferredSize(new Dimension(350, 700));
         setLayout(new BorderLayout(6, 6));
 
+        // ===== TOP (Connect Bar) =====
         top = new JPanel();
         top.setPreferredSize(new Dimension(10, 60));
+
         bDisconnect.setEnabled(false);
 
         top.add(new JLabel("User:"));
         top.add(tUser);
         top.add(new JLabel("Host:"));
         top.add(tHost);
-        top.add(new JLabel("Port:"));
-        top.add(tPort);
+
+        // 포트 고정 라벨만 표시
+        top.add(new JLabel("Port: " + SERVER_PORT));
+
         top.add(bConnect);
         top.add(bDisconnect);
 
+        // ===== CENTER (Chat view) =====
         chat.setEditable(false);
-        JScrollPane sc = new JScrollPane(chat);
 
+        // ===== BOTTOM (Input Bar) =====
         bottom = new JPanel(new BorderLayout(6, 6));
         JPanel right = new JPanel();
         right.add(bEmoji);
@@ -111,7 +128,8 @@ public final class ChatPanel extends JPanel {
         add(sc, BorderLayout.CENTER);
         add(bottom, BorderLayout.SOUTH);
 
-        bConnect.addActionListener(e -> connect());
+        // ✅ 버튼 리스너 (필수)
+        bConnect.addActionListener(e -> autoConnect());
         bDisconnect.addActionListener(e -> disconnect());
         bSend.addActionListener(e -> sendText());
         tInput.addActionListener(e -> sendText());
@@ -119,7 +137,6 @@ public final class ChatPanel extends JPanel {
 
         // 입력 중 상태 감지
         tInput.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-
             private void onChange() {
                 long now = System.currentTimeMillis();
 
@@ -129,8 +146,7 @@ public final class ChatPanel extends JPanel {
                 }
 
                 if (typingIdleTimer != null) typingIdleTimer.stop();
-                typingIdleTimer = new javax.swing.Timer(TYPING_IDLE_MS,
-                        e -> sendTyping(false));
+                typingIdleTimer = new javax.swing.Timer(TYPING_IDLE_MS, e -> sendTyping(false));
                 typingIdleTimer.setRepeats(false);
                 typingIdleTimer.start();
             }
@@ -141,13 +157,30 @@ public final class ChatPanel extends JPanel {
         });
     }
 
+    // ===== 로비/게임 화면용 표시 제어 =====
+    public void setChatVisible(boolean visible) {
+        this.chatVisible = visible;
+        sc.setVisible(visible);
+        bottom.setVisible(visible);
+        revalidate();
+        repaint();
+    }
+
     public void hideTopBar() { if (top != null) top.setVisible(false); }
     public void hideBottomBar() { if (bottom != null) bottom.setVisible(false); }
 
+    // 호환성: 예전 호출이 남아있어도 깨지지 않게
     public void setDefaultTarget(String host, int port, String user) {
+        setDefaultTarget(host, user); // port는 무시 (고정 포트)
+    }
+
+    public void setDefaultTarget(String host, String user) {
         tHost.setText(host);
-        tPort.setText(String.valueOf(port));
         tUser.setText(user);
+    }
+
+    public boolean isConnected() {
+        return socket != null && socket.isConnected() && !socket.isClosed();
     }
 
     // ==============================
@@ -156,17 +189,16 @@ public final class ChatPanel extends JPanel {
     private void connect() {
         try {
             String host = tHost.getText().trim();
-            host = resolveIPv4(host);   // ← 여기서 IPv4로 치환
-            tHost.setText(host);        // UI에도 IPv4 문자열 저장
-            int port = Integer.parseInt(tPort.getText().trim());
+            host = resolveIPv4(host);
+            tHost.setText(host);
 
             socket = new Socket();
-            socket.connect(new InetSocketAddress(host, port), 3000);
+            socket.connect(new InetSocketAddress(host, SERVER_PORT), 3000);
 
             in  = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
             out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
 
-            append("[system] connected to " + host + ":" + port + "\n");
+            append("[system] connected to " + host + ":" + SERVER_PORT + "\n");
 
             reader = new Thread(this::readLoop, "reader");
             reader.start();
@@ -185,9 +217,18 @@ public final class ChatPanel extends JPanel {
 
     private void disconnect() {
         try { sendTyping(false); } catch (Exception ignored) {}
+
         try { if (socket != null) socket.close(); } catch (IOException ignored) {}
 
         socket = null;
+        in = null;
+        out = null;
+
+        if (reader != null) {
+            try { reader.interrupt(); } catch (Exception ignored) {}
+            reader = null;
+        }
+
         typingEntries.clear();
 
         bConnect.setEnabled(true);
@@ -198,13 +239,20 @@ public final class ChatPanel extends JPanel {
         append("[system] disconnected\n");
     }
 
+    public void autoConnect() {
+        if (isConnected()) {
+            append("[system] already connected\n");
+            return;
+        }
+        connect();
+    }
+
     // ==============================
     //         서버로부터 메시지 읽기
     // ==============================
     private void readLoop() {
         try {
             while (socket != null && !socket.isClosed()) {
-
                 int len = in.readInt();
                 byte[] buf = in.readNBytes(len);
 
@@ -226,23 +274,22 @@ public final class ChatPanel extends JPanel {
 
                 } else if (msg instanceof MoveMessage mm) {
                     if (moveReceiver != null) {
-                        moveReceiver.onMove(
-                                mm.fromCol(),
-                                mm.fromRow(),
-                                mm.toCol(),
-                                mm.toRow(),
-                                mm.color()
-                        );
-                    } {
-
-                        // 2) 채팅창에 "플레이어: e2 -> e4" 한 줄 남기기
-                        append(formatMoveLine(mm));
+                        moveReceiver.onMove(mm.fromCol(), mm.fromRow(), mm.toCol(), mm.toRow(), mm.color());
                     }
+                    append(formatMoveLine(mm));
+
+                } else if (msg instanceof common.RoomJoined rj) {
+                    append("[system] 방 참가 완료: " + rj.roomId() + "\n");
+                    if (roomJoinListener != null) roomJoinListener.onJoined(rj);
+
+                } else if (msg instanceof common.RoomListResponse rl) {
+                    if (roomListListener != null) roomListListener.onRoomList(rl.rooms());
                 }
             }
 
         } catch (Exception ex) {
             append("[system] connection closed\n");
+            disconnect();
         }
     }
 
@@ -257,7 +304,25 @@ public final class ChatPanel extends JPanel {
     }
 
     // ==============================
-    // 텍스트
+    //       Room 요청 API
+    // ==============================
+    public void requestRoomList() {
+        try { send(new common.RoomListRequest(from())); }
+        catch (Exception e) { append("[error] " + e.getMessage() + "\n"); }
+    }
+
+    public void requestCreateRoom(String roomName) {
+        try { send(new common.RoomCreateRequest(from(), roomName)); }
+        catch (Exception e) { append("[error] " + e.getMessage() + "\n"); }
+    }
+
+    public void requestJoinRoom(String roomId) {
+        try { send(new common.RoomJoinRequest(from(), roomId)); }
+        catch (Exception e) { append("[error] " + e.getMessage() + "\n"); }
+    }
+
+    // ==============================
+    // 텍스트 전송
     // ==============================
     private void sendText() {
         String text = tInput.getText().trim();
@@ -274,23 +339,19 @@ public final class ChatPanel extends JPanel {
             append("[error] " + ex.getMessage() + "\n");
         }
     }
-    // 이미지 전송
+
+    // ==============================
+    // 이미지(이모지) 전송
+    // ==============================
     private void emojiPicker() {
         Window w = SwingUtilities.getWindowAncestor(this);
         Frame owner = (w instanceof Frame) ? (Frame) w : null;
+
         EmojiPickerDialog dialog = new EmojiPickerDialog(owner, file -> {
             try {
-                // res/emojis 안의 선택된 이미지 파일을 그대로 읽어서 전송
                 byte[] bytes = java.nio.file.Files.readAllBytes(file.toPath());
-                var m = new ImageMessage(
-                        from(),
-                        bytes,
-                        guessMime(file.getName()),
-                        128,
-                        128
-                );
+                var m = new ImageMessage(from(), bytes, guessMime(file.getName()), 128, 128);
                 send(m);
-
             } catch (Exception ex) {
                 append("[error] " + ex.getMessage() + "\n");
             }
@@ -298,7 +359,6 @@ public final class ChatPanel extends JPanel {
 
         dialog.setVisible(true);
     }
-
 
     private String guessMime(String name) {
         name = name.toLowerCase();
@@ -308,6 +368,7 @@ public final class ChatPanel extends JPanel {
     }
 
     private void send(ChatMessage msg) throws Exception {
+        if (out == null) throw new IllegalStateException("Not connected");
         byte[] data = codec.encode(msg);
         synchronized (this) {
             out.writeInt(data.length);
@@ -317,7 +378,8 @@ public final class ChatPanel extends JPanel {
     }
 
     private String from() {
-        return tUser.getText().trim();
+        String u = tUser.getText().trim();
+        return u.isEmpty() ? "user" : u;
     }
 
     // ==============================
@@ -338,42 +400,30 @@ public final class ChatPanel extends JPanel {
                 var img = ImageIO.read(new ByteArrayInputStream(im.data()));
                 if (img == null) return;
 
-                // 항상 문서 맨 끝으로 커서 이동
-                javax.swing.text.StyledDocument doc = chat.getStyledDocument();
+                StyledDocument doc = chat.getStyledDocument();
                 chat.setCaretPosition(doc.getLength());
 
-                // 1) "보낸사람: " 텍스트 먼저 출력
                 doc.insertString(doc.getLength(), im.from() + ": ", null);
 
-                // 2) 그 뒤에 이모지 아이콘 삽입
-                chat.setCaretPosition(doc.getLength());   // 다시 끝으로
+                chat.setCaretPosition(doc.getLength());
                 Image scaled = img.getScaledInstance(64, 64, Image.SCALE_SMOOTH);
                 chat.insertIcon(new ImageIcon(scaled));
 
-                // 3) 마지막에 줄바꿈 문자 추가 (replaceSelection 말고 insertString)
-                chat.setCaretPosition(doc.getLength());   // 아이콘 뒤로 이동
+                chat.setCaretPosition(doc.getLength());
                 doc.insertString(doc.getLength(), "\n", null);
 
             } catch (Exception ignored) {}
         });
     }
 
-    public void sendSystemMessage(String text) {
-        try {
-            send(new TextMessage("system", text));
-        } catch (Exception ignored) {}
-    }
-
     // 체스 좌표를 채팅 문자열로 변환해서 한 줄 만들어주는 헬퍼
     private String formatMoveLine(MoveMessage mm) {
-        // col,row 가 0~7 이라고 가정하고 체스 표기 (a1 ~ h8)로 변환
-        char fromFile = (char) ('a' + mm.fromCol());    // 0→'a', 1→'b' ...
-        int  fromRank = 8 - mm.fromRow();              // 0→8, 7→1
+        char fromFile = (char) ('a' + mm.fromCol());
+        int  fromRank = 8 - mm.fromRow();
 
         char toFile   = (char) ('a' + mm.toCol());
         int  toRank   = 8 - mm.toRow();
 
-        // 예: "플레이어1: e2 -> e4"
         return String.format("%s: %c%d -> %c%d\n",
                 mm.from(), fromFile, fromRank, toFile, toRank);
     }
@@ -389,26 +439,24 @@ public final class ChatPanel extends JPanel {
                     old.ttlTimer.restart();
                     return;
                 }
-                javax.swing.text.StyledDocument doc = chat.getStyledDocument();
-                //var doc = chat.getStyledDocument();
+
+                StyledDocument doc = chat.getStyledDocument();
                 String line = "[typing] " + user + " 입력 중...\n";
-                //var pos = doc.createPosition(doc.getLength());
                 int start = doc.getLength();
                 doc.insertString(doc.getLength(), line, null);
 
                 TypingEntry ent = new TypingEntry();
-                ent.start = doc.createPosition(start);;
+                ent.start = doc.createPosition(start);
                 ent.length = line.length();
 
-                ent.ttlTimer = new javax.swing.Timer(TYPING_TTL_MS,
-                        e -> removeTypingInline(user));
+                ent.ttlTimer = new javax.swing.Timer(TYPING_TTL_MS, e -> removeTypingInline(user));
                 ent.ttlTimer.setRepeats(false);
                 ent.ttlTimer.start();
 
                 typingEntries.put(user, ent);
                 chat.setCaretPosition(doc.getLength());
 
-            } catch (javax.swing.text.BadLocationException ignored) {}
+            } catch (Exception ignored) {}
         });
     }
 
@@ -417,24 +465,19 @@ public final class ChatPanel extends JPanel {
             TypingEntry ent = typingEntries.remove(user);
             if (ent == null) return;
 
-            if (ent.ttlTimer != null)
-                ent.ttlTimer.stop();
+            if (ent.ttlTimer != null) ent.ttlTimer.stop();
 
             try {
-                //var doc = chat.getStyledDocument();
-                javax.swing.text.StyledDocument doc = chat.getStyledDocument();
+                StyledDocument doc = chat.getStyledDocument();
                 int off = ent.start.getOffset();
                 int len = Math.min(ent.length, doc.getLength() - off);
-
                 if (len > 0) doc.remove(off, len);
-
             } catch (Exception ignored) {}
         });
     }
 
     private void sendTyping(boolean typing) {
-        if (socket == null || socket.isClosed()) return;
-
+        if (!isConnected()) return;
         var m = new TypingMessage(from(), typing, 2000);
         try { send(m); } catch (Exception ignored) {}
     }
@@ -442,9 +485,4 @@ public final class ChatPanel extends JPanel {
     public void appendSystemMessage(String msg) {
         append("[system] " + msg + "\n");
     }
-
-    public void autoConnect() {
-        connect();
-    }
 }
-
