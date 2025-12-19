@@ -171,8 +171,9 @@ public class StartMenu extends JFrame {
     private void enterGame(RoomJoined joined) {
         chatPanel.setRoomJoinListener(null);
         chatPanel.setRoomListListener(null);
-
-        // ✅ ChatPanel을 다른 프레임으로 옮기기 전에 부모에서 떼기 (필수)
+        //채팅 기록 초기화
+        chatPanel.clearChat();
+        // ChatPanel을 다른 프레임으로 옮기기 전에 부모에서 떼기
         Container p = chatPanel.getParent();
         if (p != null) {
             p.remove(chatPanel);

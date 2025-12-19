@@ -99,6 +99,42 @@ public final class ChatServer {
         }
     }
 
+    /**
+     * 로비(어떤 게임방에도 참가하지 않은 클라이언트)에게만 전송한다.
+     * - roomId == null 인 세션만 대상
+     * - 클라이언트는 서버가 돌려준 메시지로 화면에 출력하므로, 보낸 사람도 포함해서 전송한다.
+     */
+    void broadcastToLobby(ChatMessage msg) {
+
+        if (!"typing".equals(msg.type())) {
+            logFrame.log(
+                    "로비 전송 ▶ 보낸이: " + msg.from() +
+                            " | 메시지 타입: " + msg.type() +
+                            " | 대상: 로비(방 미참가)"
+            );
+        }
+
+        synchronized (clients) {
+            for (var c : clients) {
+                if (c.roomId() != null) continue; // 방 참가자는 제외
+                try {
+                    c.send(msg);
+                } catch (IOException e) {
+                    logFrame.log("전송 실패: " + e.getMessage());
+                }
+            }
+        }
+    }
+
+    /**
+     * roomId가 null이면 로비로, 아니면 해당 방으로 전송한다.
+     */
+    void broadcastScoped(ClientContext from, ChatMessage msg) {
+        String rid = (from == null) ? null : from.roomId();
+        if (rid == null) broadcastToLobby(msg);
+        else broadcastToRoom(rid, msg);
+    }
+
     void broadcastExcept(ChatMessage msg, ClientContext except) {
 
         if (!"typing".equals(msg.type())) {
@@ -125,10 +161,16 @@ public final class ChatServer {
         clients.remove(ctx);
         logFrame.log("클라이언트 연결 종료");
 
+        // ✅ 로비/방에 맞춰 퇴장 알림을 범위 전송
         try {
-            broadcast(new TextMessage("system", "사용자 1명이 퇴장했습니다."), ctx);
-        } catch (Exception ignored) {
-        }
+            String rid = ctx.roomId();
+            var bye = new TextMessage("system", "사용자 1명이 퇴장했습니다.");
+            if (rid == null) broadcastToLobby(bye);
+            else broadcastToRoom(rid, bye);
+        } catch (Exception ignored) {}
+
+        // 방에 있었다면 정리
+        try { leaveRoom(ctx); } catch (Exception ignored) {}
     }
 
     public static void main(String[] args) throws Exception {

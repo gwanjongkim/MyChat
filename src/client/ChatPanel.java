@@ -166,6 +166,13 @@ public final class ChatPanel extends JPanel {
         repaint();
     }
 
+    /** 채팅 화면(대화 기록)을 비운다. 로비/게임 전환 시 분리하고 싶을 때 사용 */
+    public void clearChat() {
+        SwingUtilities.invokeLater(() -> {
+            chat.setText("");
+        });
+    }
+
     public void hideTopBar() { if (top != null) top.setVisible(false); }
     public void hideBottomBar() { if (bottom != null) bottom.setVisible(false); }
 
@@ -279,8 +286,8 @@ public final class ChatPanel extends JPanel {
                     append(formatMoveLine(mm));
 
                 } else if (msg instanceof common.RoomJoined rj) {
-                    append("[system] 방 참가 완료: " + rj.roomId() + "\n");
                     if (roomJoinListener != null) roomJoinListener.onJoined(rj);
+                    append("[system] 방 참가 완료: " + rj.roomId() + "\n");
 
                 } else if (msg instanceof common.RoomListResponse rl) {
                     if (roomListListener != null) roomListListener.onRoomList(rl.rooms());
